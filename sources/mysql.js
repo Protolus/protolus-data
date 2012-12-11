@@ -1,4 +1,5 @@
 //todo: events support
+var prime = require('prime');
 var Class = require('Classy');
 var type = require('prime/util/type');
 var array = require('prime/es5/array');
@@ -6,7 +7,38 @@ var fn = require('prime/es5/function');
 var Emitter = require('prime/util/emitter');
 var fs = require('fs');
 var mysql = require("mysql");
+var dateformat = require('dateformat');
 var Data = require('../protolus-data');
+
+prime.merge = function(objOne, objTwo){
+    var result = {};
+    prime.each(objOne, function(item, key){
+        result[key] = item;
+    });
+    prime.each(objTwo, function(item, key){
+        if(!result[key]) result[key] = item;
+    });
+    return result;
+};
+array.contains = function(haystack, needle){ //parallel
+    return haystack.indexOf(needle) != -1;
+};
+prime.values = function(object){
+    var result = [];
+    for(var key in object) result.push(object[key]);
+    return result;
+};
+prime.filter = function(obj, filter){
+    var result = {};
+    prime.each(obj, function(item, key){
+        if(filter(item, key)) result[key] = item;
+    });
+    return result;
+};
+
+var isNumeric = function(value){
+    return (!isNaN(value * 1)) || value.match(/^[0-9][0-9a-f]*$/);
+};
 
 var MySQLDatasource = new Class({
     Extends : Data.Source,
@@ -16,7 +48,7 @@ var MySQLDatasource = new Class({
         this.connection = mysql.createClient(options);
     },
     log : function(text){
-        if(Protolus.verbose) console.log('['+AsciiArt.ansiCodes('DATA', 'magenta')+']', text);
+        //console.log('[DATA]', text);
     },
     getRepresentation : function(type, value){
         switch(this.options[key]['type']){
@@ -35,8 +67,8 @@ var MySQLDatasource = new Class({
     },
     buildPredicate: function(predicate, options, object){ // the real where clause builder
         var result = [];
-        predicate.each(fn.bind(function(item){
-            if(typeOf(item) == 'array'){
+        array.forEach(predicate, fn.bind(function(item){
+            if(type(item) == 'array'){
                 result.push('('+this.buildPredicate(item)+')');
             }else{
                 if(item.type == 'conjunction'){
@@ -46,7 +78,7 @@ var MySQLDatasource = new Class({
                 }
                 if(item.type == 'expression'){
                     var value = (
-                        (Protolus.isNumeric(item.value) || item.value == 'true' || item.value == 'false')
+                        (isNumeric(item.value) || item.value == 'true' || item.value == 'false')
                         ?item.value
                         :'\''+item.value+'\''
                     );
@@ -56,10 +88,10 @@ var MySQLDatasource = new Class({
         }, this));
         return result.join(' ');
     },
-    performSearch : function(type, predicate, options, callback, errorCallback){
+    performSearch : function(dataType, predicate, options, callback, errorCallback){
         var query = '';
-        if(typeOf(predicate) == 'string'){ //raw sql
-            query = 'SELECT * FROM '+type+(predicate!=''?' WHERE '+predicate:'');
+        if(type(predicate) == 'string'){ //raw sql
+            query = 'SELECT * FROM '+dataType+(predicate!=''?' WHERE '+predicate:'');
         }else{ // json based search object
             //something else?
         }
@@ -72,10 +104,9 @@ var MySQLDatasource = new Class({
         this.connection.query(query, fn.bind(function(error, results, fields){
             if(this.debug) console.log('['+AsciiArt.ansiCodes('Query', 'blue')+']:'+query);
             if(this.debug) console.log('['+AsciiArt.ansiCodes('Results', 'blue')+']:'+JSON.encode(results));
-            if(Protolus.verbose){
-                if(this.debug) this.log(query+(results && results.length?' -> {'+results.length+'}':''), 'Query');
-                else this.log(query.split( / ([wW][Hh][Ee][Rr][Ee]|[Ss][Ee][Tt]) / ).shift()+'...'+(results && results.length?' -> {'+results.length+'}':''), 'Query');
-            }
+            this.log(query+(results && results.length?' -> {'+results.length+'}':''), 'Query');
+                /*else this.log(query.split( / ([wW][Hh][Ee][Rr][Ee]|[Ss][Ee][Tt]) / ).shift()+'...'+(results && results.length?' -> {'+results.length+'}':''), 'Query');
+            }*/
             if(error && errorCallback) {
                 errorCallback('[MySQL]'+error);
                 return;
@@ -109,23 +140,22 @@ var MySQLDatasource = new Class({
         );
     },
     save : function(object, callback, errorCallback){
-        var now = System.dateFormat(new Date(), "yyyy-mm-dd'T'HH:MM:ss");
-        var data = Object.merge(object.data, {
+        var now = dateformat(new Date(), "yyyy-mm-dd'T'HH:MM:ss");
+        var data = prime.merge(object.data, {
             modification_time : now
         });
-        data = Object.filter(data, fn.bind(function(item, key){
-            return Data.coreFields.contains(key) || object.fields.contains(key);
+        data = prime.filter(data, fn.bind(function(item, key){
+            return array.contains(Data.coreFields, key) || array.contains(object.fields, key);
         }, this));
-        
         if(object.exists){
             var updates =  [];
             delete data[object.primaryKey];
-            Object.each(data, fn.bind(function(value, key){
-                updates.push(key+' = '+(typeOf(value) == 'number'?value:this.connection.escape(value)));
+            prime.each(data, fn.bind(function(value, key){
+                updates.push(key+' = '+(type(value) == 'number'?value:this.connection.escape(value)));
             }, this));
             this.execute(
                 'update '+object.options.name+' set '+updates.join(',')+' where '+object.primaryKey+' =\''+object.get(object.primaryKey)+'\'', 
-                fn.find(function(results){
+                fn.bind(function(results){
                     if(callback) callback(object.data);
                 }, this),
                 errorCallback
@@ -134,7 +164,7 @@ var MySQLDatasource = new Class({
             data.creation_time = now;
             this.execute(
                 'insert into '+object.options.name+' ('+Object.keys(data).join(', ')+') values ('+
-                    Object.values(data).map(function(value){
+                    prime.values(data).map(function(value){
                         return this.connection.escape(value);
                     }.bind(this)).join(',')+')', 
                 fn.bind(function(results){

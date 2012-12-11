@@ -7,11 +7,27 @@ var fn = require('prime/es5/function');
 var regexp = require('prime/es5/regexp');
 var Emitter = require('prime/util/emitter');
 var fs = require('fs');
+prime.clone = function(obj){
+    var result;
+    switch(type(obj)){
+        case 'object':
+            result = {};
+            for(var key in obj){
+                result[key] = prime.clone(obj[key]);
+            }
+            break;
+        case 'array':
+            result = obj.slice(0);
+            break;
+        default : result = obj;
+    }
+    return result;
+};
 
 var Options = new Class({
     setOptions : function(options){
         if(!this.options) this.options = {};
-        array.each(options, fn.bind(function(value, key){
+        array.forEach(options, fn.bind(function(value, key){
             this.options[key] = value;
         }, this));
     }
@@ -28,10 +44,10 @@ var ProtolusData = new Class({
     initialize : function(options){
         if(!options.datasource) new Error('Datasource not specified for object!');
         if(!options.name) new Error('Data name not specified for object!');
-        if(!Data.sources[options.datasource]) new Error('Datasource not found for object!');
+        if(!ProtolusData.sources[options.datasource]) new Error('Datasource not found for object!');
         this.options = options;
         this.datasource = ProtolusData.Source.get(options.datasource);
-        switch(this.datasource.options.type){
+        if(this.datasource) switch(this.datasource.options.type){
             case 'mongo':
                 if(this.primaryKey == 'id'){ //if we index by id, we'll assume mongo's _id will do just as well 
                     this.fields.erase('id');
@@ -106,7 +122,7 @@ var ProtolusData = new Class({
         this.set(this.primaryKey, id);
         return this.datasource.load(this, fn.bind(function(data){
             this.exists = true;
-            callback(data);
+            if(callback) callback(data);
         }, this), errorCallback);
     },
     delete : function(callback, errorCallback){
@@ -138,41 +154,54 @@ var ProtolusData = new Class({
     },
 });
 ProtolusData.dummies = {};
-ProtolusData.dummy = function(type, context){
-    if(!context) context = this;
-    if(!Data.dummies[type]){
+ProtolusData.classes = {};
+ProtolusData.dummy = function(type, classDefinition){
+    //if(!context) context = this;
+    if(!ProtolusData.dummies[type]) ProtolusData.dummies[type] = new classDefinition();
+    /*if(!ProtolusData.dummies[type]){
         try{
-            context.eval('Data.dummies[type] = new context.'+type+'();');
+            context.eval('ProtolusData.dummies[type] = new cd();');
         }catch(ex){
             throw('Object type(\''+type+'\') not found');
         }
-    }
-    return Data.dummies[type];
+    }*/
+    return ProtolusData.dummies[type];
+};
+ProtolusData.register = function(type, classDefinition){
+    ProtolusData.classes[type] = classDefinition;
+};
+ProtolusData.require = function(type, classDefinition){
+    var classDefinition = require(type);
+    //console.log('WWW', type, classDefinition, new classDefinition())
+    ProtolusData.dummies[type] = new classDefinition();
+    ProtolusData.register(type, classDefinition);
+    //ProtolusData.dummy(type, classDefinition);
+    GLOBAL[type] = classDefinition;
 };
 ProtolusData.parse = function(query, options){
-    if(!Data.parser) Data.parser = new Data.WhereParser();
-    return Data.parser.parse(query); //options?
+    if(!ProtolusData.parser) ProtolusData.parser = new ProtolusData.WhereParser();
+    return ProtolusData.parser.parse(query); //options?
 };
 ProtolusData.coreFields = ['modification_time', 'creation_time', 'modifier_id', 'creator_id', 'record_status'];
 ProtolusData.sources = {};
 ProtolusData.autoLink = false; // join logic 
-ProtolusData.search = function(type, querystring, options, errorCallback){ //query is a query object or an object
-    if(typeOf(options) == 'function') options = {onSuccess: options};
+ProtolusData.search = function(objType, querystring, options, errorCallback){ //query is a query object or an object
+    if(type(options) == 'function') options = {onSuccess: options};
     if(!options) options = {};
-    if(errorCallback && typeOf(errorCallback) == 'function') options['onFailure'] = errorCallback;
-    var dummy = Data.dummy(type);
+    if(errorCallback && type(errorCallback) == 'function') options['onFailure'] = errorCallback;
+    var dummy = ProtolusData.dummy(objType);
     var datasource = Datasource.get(dummy.options.datasource);
-    var query = Data.parse(querystring);
-    return datasource.search(type, query, options);
+    var query = ProtolusData.parse(querystring);
+    return datasource.search(objType, query, options);
 };
-ProtolusData.query = function(type, querystring, options, errorCallback){ //query is a query object or an object
-    if(typeOf(options) == 'function') options = {onSuccess: options};
+ProtolusData.query = function(objType, querystring, options, errorCallback){ //query is a query object or an object
+    if(type(options) == 'function') options = {onSuccess: options};
     if(!options) options = {};
-    if(errorCallback && typeOf(errorCallback) == 'function') options['onFailure'] = errorCallback;
-    var dummy = Data.dummy(type);
-    var datasource = Datasource.get(dummy.options.datasource);
-    var query = Data.parse(querystring);
-    return datasource.query(type, query, options);
+    if(errorCallback && type(errorCallback) == 'function') options['onFailure'] = errorCallback;
+    var dummy = ProtolusData.dummy(objType);
+    var datasource = ProtolusData.Source.get(dummy.options.datasource);
+    var query = ProtolusData.parse(querystring);
+    return datasource.query(objType, query, options);
 };
 ProtolusData.id = function(type){
     if(!type) type = 'uuid';
@@ -233,7 +262,7 @@ ProtolusData.Owner = new Class({ //an owner is an instance of Data
     }
 });
 ProtolusData.OwnershipMask = new Class({
-    Extends : Data.BitMask,
+    Extends : ProtolusData.BitMask,
     contexts : ['user', 'group', 'world'],
     permissions : ['read', 'write', 'execute'],
     initialize : function(value){
@@ -327,10 +356,10 @@ ProtolusData.WhereParser = new Class({
         var phrases = this.parse_compound_phrases(blocks, []);
         var object = this;
         var mapFunction = function(value){
-            if(typeOf(value) == 'array'){
+            if(type(value) == 'array'){
                 return value.map(mapFunction);
             }else{
-                if(object.sentinels.contains(value.toLowerCase())){
+                if(array.contains(object.sentinels, value.toLowerCase())){
                     return {
                         type : 'conjunction',
                         value : value
@@ -349,17 +378,18 @@ ProtolusData.WhereParser = new Class({
         var value = '';
         var inQuote = false;
         var openQuote = '';
+        var ch;
         for(var lcv=0; lcv < text.length; lcv++){
             ch = text[lcv];
             if(inQuote && ch === inQuote){
                 inQuote = false;
                 continue;
             }
-            if( (!inQuote) && this.textEscape.contains(ch)){
+            if( (!inQuote) && array.contains(this.textEscape, ch)){
                 inQuote = ch;
                 continue;
             }
-            if(this.operators.contains(ch)){
+            if(array.contains(this.operators, ch)){
                 operator += ch;
                 continue;
             }
@@ -414,15 +444,15 @@ ProtolusData.WhereParser = new Class({
         return root;
     },
     parse_compound_phrases : function(data, result){
-        array.forEach(data, function(item){
-            var type = typeOf(item);
-            if(type == 'array'){
+        array.forEach(data, fn.bind(function(item){
+            var theType = type(item);
+            if(theType == 'array'){
                 var results = this.parse_compound_phrases(item, []);
                 result.push(results);
-            }else if(type == 'string'){
+            }else if(theType == 'string'){
                 result = this.parse_compound_phrase(item);
             }
-        }.bind(this));
+        }, this));
         return result;
     },
     parse_compound_phrase : function(clause){
@@ -430,6 +460,7 @@ ProtolusData.WhereParser = new Class({
         var escape = '';
         var current = '';
         var results = [''];
+        var ch;
         for(var lcv=0; lcv < clause.length; lcv++){
             ch = clause[lcv];
             if(inText){
@@ -437,13 +468,13 @@ ProtolusData.WhereParser = new Class({
                 current = '';
                 if(ch === escape) inText = false;
             }else{
-                if(this.textEscape.contains(ch)){
+                if(array.contains(this.textEscape, ch)){
                     inText = true;
                     escape = ch;
                 }
                 if(ch != ' '){
                     current += ch;
-                    if(this.sentinels.contains(current.toLowerCase())){
+                    if(array.contains(this.sentinels, current.toLowerCase())){
                         results.push(current);
                         results.push('');
                         current = '';
@@ -469,12 +500,12 @@ ProtolusData.Source = new Class({
         ) this.debug = true; 
         ProtolusData.sources[options.name] = this;
     },
-    search : function(type, query, options, callback){
+    search : function(theType, query, options, callback){
         var successFunction = options.onSuccess;
         options.onSuccess = function(data){
             results = [];
             data.each(function(row){
-                var dummy = Data.new(type);
+                var dummy = Data.new(theType);
                 dummy.data = row;
                 results.push(dummy);
             });
@@ -485,19 +516,19 @@ ProtolusData.Source = new Class({
             if(failureFunction) failureFunction(error);
         };
         
-        this.query(type, query, options, callback);
+        this.query(theType, query, options, callback);
     },
-    query : function(type, query, options, callback){
-        var dummy = Data.dummy(type);
-        type = dummy.options.name;
-        if(typeOf(options) == 'function'){
+    query : function(theType, query, options, callback){
+        var dummy = ProtolusData.dummy(theType);
+        theType = dummy.options.name;
+        if(type(options) == 'function'){
             callback = options;
             options = {};
         }
         if(!options) options = {};
         var predicate = this.buildPredicate(query, options, dummy);
-        return this.performSearch(type, predicate, options, (callback || options.onSuccess), (
-            options.onFailure || function(err){ console.log('['+AsciiArt.ansiCodes('⚠ ERROR', 'red+blink')+']:'+JSON.encode(err)); }
+        return this.performSearch(theType, predicate, options, (callback || options.onSuccess), (
+            options.onFailure || function(err){ console.log('['+'⚠ ERROR'+']:'+JSON.stringify(err)); }
         ));
     },
     handlePermissions: function(){

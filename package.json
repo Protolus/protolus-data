@@ -1,0 +1,36 @@
+{
+    "name": "protolus-data",
+    "homepage": "https://github.com/Protolus/protolus-data",
+    "version": "0.0.1-alpha",
+    "main": "./node_modules/protolus-data.js",
+    "description": "A multi source ORM supporting normalized queries across them",
+    "keywords": [
+        "ORM",
+        "data",
+        "mysql",
+        "mongo",
+        "amqp"
+    ],
+    "author": "Abbey Hawk Sparrow <@khrome> (http://patternweaver.com)",
+    "contributors": [],
+    "bugs": {
+        "url": "https://github.com/Protolus/protolus-data/issues"
+    },
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git://github.com/Protolus/protolus-data.git"
+    },
+    "dependencies": {
+        "prime": "*",
+        "Classy":"*"
+    },
+    "devDependencies": {
+        "mocha": "*",
+        "should": "*"
+    },
+    "optionalDependencies": {},
+    "engines": {
+        "node": "*"
+    }
+}

@@ -1,4 +1,5 @@
 //todo: events support
+var prime = require('prime');
 var Class = require('Classy');
 var type = require('prime/util/type');
 var array = require('prime/es5/array');
@@ -11,7 +12,7 @@ var Data = require('../protolus-data');
 var MongoDatasource = new Class({
     Extends : Data.Source,
     collections : {},
-    debug : false,
+    debug : true,
     initialize: function(options){
         //todo: support replica sets
         this.parent(options);
@@ -121,11 +122,12 @@ var MongoDatasource = new Class({
                     }
                 }, this));
         }else{
-            var inserted = Object.clone(object.data);
-            var request = (this.debug?'db.'+object.options.name+'.insert('+JSON.encode(inserted)+')':'db.'+object.options.name+'.insert({...})');
-            if(Protolus.verbose && this.debug) console.log('['+AsciiArt.ansiCodes('DATA CALL', 'magenta')+']'+request);
+            var inserted = prime.clone(object.data);
+            var request = (this.debug?'db.'+object.options.name+'.insert('+JSON.stringify(inserted)+')':'db.'+object.options.name+'.insert({...})');
+            console.log('['+'DATA CALL'+']'+request);
             this.collections[object.options.name].insert(object.data, fn.bind(function(err, data){
                 if( err ){
+                    console.log(err);
                     if(errorCallback) errorCallback(err);
                 }else{
                     object.data = data;
