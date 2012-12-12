@@ -28,7 +28,7 @@ prime.clone = function(obj){
 };
 
 var isNumeric = function(value){
-    return (!isNaN(value * 1)) || value.match(/^[0-9][0-9a-f]*$/);
+    return (!isNaN(value * 1)) || (value.match && value.match(/^[0-9][0-9a-f]*$/));
 };
 
 var MongoDatasource = new Class({
@@ -45,7 +45,6 @@ var MongoDatasource = new Class({
         var result = value;
         switch(typeName){
             case 'mongoid':{
-                //console.log('woo', type(result));
                 if(type(result) == 'object') result = result.toString(); //it's possible this is already an object
                 result = this.connection.ObjectId(result);
             }
@@ -95,14 +94,13 @@ var MongoDatasource = new Class({
     lastId : function(type, callback){
         
     },
-    performSearch : function(type, predicate, options, callback, errorCallback){
-        if(!this.collections[type]) this.collections[type] = this.connection.collection(type);
-        var collection = this.collections[type];
-        var request = (this.debug?'db.'+type+'.find('+JSON.stringify(predicate)+', '+JSON.stringify(options)+')':'db.'+type+'.find({...}, '+JSON.stringify(options)+')');
+    performSearch : function(typeName, predicate, options, callback, errorCallback){
+        if(!this.collections[typeName]) this.collections[typeName] = this.connection.collection(typeName);
+        var collection = this.collections[typeName];
+        var request = (this.debug?'db.'+typeName+'.find('+JSON.stringify(predicate)+', '+JSON.stringify(options)+')':'db.'+typeName+'.find({...}, '+JSON.stringify(options)+')');
         var floor = ((options.limit && options.page)?options.limit * (options.page-1):(options.skip?options.skip:1));
         //console.log('['+'DATA CALL'+']'+request);
-        if(predicate['_id']) predicate['_id'] = new ObjectID(predicate['_id']);
-        var query = collection.find(predicate, fn.bind(function(err, objects) {
+        var query = collection.find(predicate, {safe:true}, fn.bind(function(err, objects) {
             if( err ){
                 if(errorCallback) errorCallback(err);
             } else{
@@ -163,7 +161,7 @@ var MongoDatasource = new Class({
     load : function(object, callback, errorCallback){
         var loadOn = {};
         loadOn[object.primaryKey] = object.get(object.primaryKey, true);
-        this.performSearch(object.options.name, loadOn, {},fn.bind(function(data) {
+        this.performSearch(object.options.name, loadOn, {},fn.bind(function(data){
             if(data.length > 0){
                 object.data = data[0];
                 callback(data[0], {});
@@ -175,16 +173,16 @@ var MongoDatasource = new Class({
     delete : function(object, callback, errorCallback){
         if(!this.collections[object.options.name]) this.collections[object.options.name] = this.connection.collection(object.options.name);
         var deleteOn = {};
-        deleteOn[object.primaryKey] = object.get(object.primaryKey);
+        deleteOn[object.primaryKey] = object.get(object.primaryKey, true);
         this.collections[object.options.name].remove( deleteOn,
             fn.bind(function(err) {
                 if( err ){
                     if(errorCallback) errorCallback(err);
                 } else {
-                    if(Protolus.verbose){
+                    /*if(Protolus.verbose){
                         if(!this.debug) console.log('['+AsciiArt.ansiCodes('DATA', 'magenta')+'] db.'+object.options.name+'.delete(...)');
                         else console.log('['+AsciiArt.ansiCodes('DATA', 'magenta')+'] db.'+object.options.name+'.delete('+JSON.encode(deleteOn)+')');
-                    }
+                    }*/
                     if(callback) callback(object.data, {});
                 }
             }, this)

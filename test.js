@@ -1,7 +1,8 @@
 var should = require("should");
 var Data = require('./protolus-data');
-Data.require('User');
-Data.require('Thing');
+var User;
+//var Thing = Data.require('Thing');
+var Thing;
 
 //todo: do build-up & tear down of datasources
 describe('Protolus.Data', function(){
@@ -18,6 +19,7 @@ describe('Protolus.Data', function(){
                 //password : '',
                 database : 'protolus'
             });
+            User = Data.require('User');
         });
         
         it('save an object', function(done){
@@ -67,6 +69,7 @@ describe('Protolus.Data', function(){
                 host : 'localhost',
                 database : 'protolus'
             });
+            Thing = Data.require('Thing');
         });
         
         it('save an object', function(done){
@@ -94,10 +97,9 @@ describe('Protolus.Data', function(){
         });
         
         it('select a set of objects >= to the one we created', function(done){
-            Data.query('Thing', 'id == '+id, function(results){
-                console.log('aa', results);
-                //results.length.should.equal(1);
-                //done();
+            Data.query('Thing', 'id = '+id, function(results){
+                results.length.should.equal(1);
+                done();
             });
         });
         

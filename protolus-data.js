@@ -23,6 +23,13 @@ prime.clone = function(obj){
     }
     return result;
 };
+
+prime.keys = function(object){
+    var result = [];
+    for(var key in object) result.push(key);
+    return result;
+};
+
 array.erase = function(arr, field){
     var index;
     while((arr.indexOf(field)) != -1){ //get 'em all
@@ -59,24 +66,27 @@ var ProtolusData = new Class({
         if(!ProtolusData.sources[options.datasource]) new Error('Datasource not found for object!');
         this.options = options;
         this.datasource = ProtolusData.Source.get(options.datasource);
+        //console.log('C', (this.datasource == undefined), options, prime.keys(ProtolusData.sources));
         if(this.datasource){
-        switch(this.datasource.options.type){
-            case 'mongo':
-                if(this.primaryKey == 'id'){ //if we index by id, we'll assume mongo's _id will do just as well 
-                    array.erase(this.fields, 'id');
-                    this.virtualAlias('id', '_id');
-                    /*this.virtualSetter('id', function(value){
-                        console.log('id', value);
-                        throw ('Mongo IDs cannot be altered!');
-                    });*/
-                    this.primaryKey = '_id';
-                    this.setOption('type', '_id', 'mongoid');
-                }
-                break;
-            case 'mysql':
+            switch(this.datasource.options.type){ //convert from switch to DS callout
+                case 'mongo':
+                    //console.log('D');
+                    if(this.primaryKey == 'id'){ //if we index by id, we'll assume mongo's _id will do just as well 
+                        array.erase(this.fields, 'id');
+                        this.virtualAlias('id', '_id');
+                        /*
+                        this.virtualSetter('id', function(value){
+                            console.log('id', value);
+                            throw ('Mongo IDs cannot be altered!');
+                        }); //*/
+                        this.primaryKey = '_id';
+                        this.setOption('type', '_id', 'mongoid');
+                    }
+                    break;
+                case 'mysql':
                 
-                break;
-        }
+                    break;
+            }
         }
     },
     get : function(key, typed){
@@ -192,13 +202,12 @@ ProtolusData.dummy = function(type, classDefinition){
 ProtolusData.register = function(type, classDefinition){
     ProtolusData.classes[type] = classDefinition;
 };
-ProtolusData.require = function(type, classDefinition){
+ProtolusData.require = function(type, makeGlobal){
     var classDefinition = require(type);
-    //console.log('WWW', type, classDefinition, new classDefinition())
     ProtolusData.dummies[type] = new classDefinition();
     ProtolusData.register(type, classDefinition);
-    //ProtolusData.dummy(type, classDefinition);
-    GLOBAL[type] = classDefinition;
+    if(makeGlobal) GLOBAL[type] = classDefinition;
+    return classDefinition;
 };
 ProtolusData.parse = function(query, options){
     if(!ProtolusData.parser) ProtolusData.parser = new ProtolusData.WhereParser();
@@ -207,6 +216,19 @@ ProtolusData.parse = function(query, options){
 ProtolusData.coreFields = ['modification_time', 'creation_time', 'modifier_id', 'creator_id', 'record_status'];
 ProtolusData.sources = {};
 ProtolusData.autoLink = false; // join logic 
+var queryTyper = function(query, dummy, datasource){
+    array.forEach(query, function(item, index){
+        if(item.type == 'expression' && dummy.virtuals[item.key]){
+            var alias = dummy.virtuals[item.key].alias
+            query[index].key = alias;
+            var a = query[index].value;
+            if(query[index].key == '_id'){
+                var ObjectID = require('mongodb').ObjectID;
+                query[index].value = ObjectID(query[index].value);
+            }
+        }
+    });
+};
 ProtolusData.search = function(objType, querystring, options, errorCallback){ //query is a query object or an object
     if(type(options) == 'function') options = {onSuccess: options};
     if(!options) options = {};
@@ -214,6 +236,7 @@ ProtolusData.search = function(objType, querystring, options, errorCallback){ //
     var dummy = ProtolusData.dummy(objType);
     var datasource = Datasource.get(dummy.options.datasource);
     var query = ProtolusData.parse(querystring);
+    queryTyper(query, dummy, datasource);
     return datasource.search(objType, query, options);
 };
 ProtolusData.query = function(objType, querystring, options, errorCallback){ //query is a query object or an object
@@ -223,8 +246,10 @@ ProtolusData.query = function(objType, querystring, options, errorCallback){ //q
     var dummy = ProtolusData.dummy(objType);
     var datasource = ProtolusData.Source.get(dummy.options.datasource);
     var query = ProtolusData.parse(querystring);
+    queryTyper(query, dummy, datasource);
     return datasource.query(objType, query, options);
 };
+
 ProtolusData.id = function(type){
     if(!type) type = 'uuid';
     switch(type){
