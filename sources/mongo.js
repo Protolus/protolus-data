@@ -7,7 +7,29 @@ var fn = require('prime/es5/function');
 var Emitter = require('prime/util/emitter');
 var fs = require('fs');
 var mongo = require("mongojs");
+var ObjectID = require('mongodb').ObjectID;
 var Data = require('../protolus-data');
+
+prime.clone = function(obj){
+    var result;
+    switch(type(obj)){
+        case 'object':
+            result = {};
+            for(var key in obj){
+                result[key] = prime.clone(obj[key]);
+            }
+            break;
+        case 'array':
+            result = obj.slice(0);
+            break;
+        default : result = obj;
+    }
+    return result;
+};
+
+var isNumeric = function(value){
+    return (!isNaN(value * 1)) || value.match(/^[0-9][0-9a-f]*$/);
+};
 
 var MongoDatasource = new Class({
     Extends : Data.Source,
@@ -15,14 +37,16 @@ var MongoDatasource = new Class({
     debug : true,
     initialize: function(options){
         //todo: support replica sets
+        options.type = 'mongo';
         this.parent(options);
-        this.connection = mongo.connect(this.options.host+"/"+this.options.database);
+        this.connection = mongo.connect(options.host+"/"+options.database);
     },
-    getRepresentation : function(type, value){
+    getRepresentation : function(typeName, value){
         var result = value;
-        switch(type){
+        switch(typeName){
             case 'mongoid':{
-                if(typeOf(result) == 'object') result = result.toString(); //it's possible this is already an object
+                //console.log('woo', type(result));
+                if(type(result) == 'object') result = result.toString(); //it's possible this is already an object
                 result = this.connection.ObjectId(result);
             }
         }
@@ -31,8 +55,8 @@ var MongoDatasource = new Class({
     buildPredicate: function(predicate, options, object){
         var result = {};
         var stack = result;
-        predicate.each(fn.bind(function(item){
-            if(typeOf(item) == 'array'){
+        array.forEach(predicate, fn.bind(function(item){
+            if(type(item) == 'array'){
                 //result.push('('+this.buildPredicate(item)+')');
                 
             }else{
@@ -46,7 +70,7 @@ var MongoDatasource = new Class({
                 }
                 if(item.type == 'expression'){
                     var value = (
-                        (Protolus.isNumeric(item.value) || item.value == 'true' || item.value == 'false')
+                        (isNumeric(item.value) || item.value == 'true' || item.value == 'false')
                         ?parseFloat(item.value)
                         :item.value
                     );
@@ -74,9 +98,10 @@ var MongoDatasource = new Class({
     performSearch : function(type, predicate, options, callback, errorCallback){
         if(!this.collections[type]) this.collections[type] = this.connection.collection(type);
         var collection = this.collections[type];
-        var request = (this.debug?'db.'+type+'.find('+JSON.encode(predicate)+', '+JSON.encode(options)+')':'db.'+type+'.find({...}, '+JSON.encode(options)+')');
+        var request = (this.debug?'db.'+type+'.find('+JSON.stringify(predicate)+', '+JSON.stringify(options)+')':'db.'+type+'.find({...}, '+JSON.stringify(options)+')');
         var floor = ((options.limit && options.page)?options.limit * (options.page-1):(options.skip?options.skip:1));
-        if(Protolus.verbose && this.debug) console.log('['+AsciiArt.ansiCodes('DATA CALL', 'magenta')+']'+request);
+        //console.log('['+'DATA CALL'+']'+request);
+        if(predicate['_id']) predicate['_id'] = new ObjectID(predicate['_id']);
         var query = collection.find(predicate, fn.bind(function(err, objects) {
             if( err ){
                 if(errorCallback) errorCallback(err);
@@ -84,7 +109,7 @@ var MongoDatasource = new Class({
                 query.count(fn.bind(function(err, count) {
                     var lastElement = (floor-1)+objects.length;
                     var range = ((lastElement == floor)?lastElement:(floor+1)+'-'+(lastElement+1));
-                    if(Protolus.verbose) console.log('['+AsciiArt.ansiCodes('DATA'+(this.debug?' RETURN':''), 'magenta')+'] '+request+(objects && objects.length?' -> {'+range+(lastElement+1>=count?'':'/'+count)+'}':''));
+                    //console.log('['+'DATA'+(this.debug?' RETURN':'')+'] '+request+(objects && objects.length?' -> {'+range+(lastElement+1>=count?'':'/'+count)+'}':''));
                     callback(objects, {count: count, page:(options.page?options.page:1)});
                 }, this));
             }
@@ -99,40 +124,38 @@ var MongoDatasource = new Class({
     save : function(object, callback, errorCallback){
         if(!this.collections[object.options.name]) this.collections[object.options.name] = this.connection.collection(object.options.name);
         if(object.exists){
-            var payload = Object.clone(object.data);
+            var payload = prime.clone(object.data);
             delete payload[object.primaryKey];
-            var originalPayload = Object.clone(payload)
+            var originalPayload = prime.clone(payload)
             var updateOn = {};
             updateOn[object.primaryKey] = object.get(object.primaryKey, true);
             if(object.permissions) payload['permissions'] = object.permissions;
-            var request = (this.debug?'db.'+object.options.name+'.update('+JSON.encode(updateOn)+', '+JSON.encode(payload)+')':'db.'+object.options.name+'.update({...})');
-            if(Protolus.verbose && this.debug) console.log('['+AsciiArt.ansiCodes('DATA CALL', 'magenta')+']'+request);
+            var request = (this.debug?'db.'+object.options.name+'.update('+JSON.stringify(updateOn)+', '+JSON.stringify(payload)+')':'db.'+object.options.name+'.update({...})');
+            //console.log('['+'DATA CALL'+']'+request);
             this.collections[object.options.name].update(
                 updateOn,
                 payload,
                 {},
-                fn.bind(function(err) {
+                fn.bind(function(err, data) {
                     if( err ){
                         if(errorCallback) errorCallback(err);
                     } else {
-                        if(Protolus.verbose){
-                            if(Protolus.verbose) console.log('['+AsciiArt.ansiCodes('DATA'+(this.debug?' RETURN':''), 'magenta')+'] '+request);
-                        }
+                        //console.log('['+'DATA'+(this.debug?' RETURN':'')+'] '+request);
                         callback(object.data, {});
                     }
                 }, this));
         }else{
             var inserted = prime.clone(object.data);
             var request = (this.debug?'db.'+object.options.name+'.insert('+JSON.stringify(inserted)+')':'db.'+object.options.name+'.insert({...})');
-            console.log('['+'DATA CALL'+']'+request);
+            //console.log('['+'DATA CALL'+']'+request);
             this.collections[object.options.name].insert(object.data, fn.bind(function(err, data){
                 if( err ){
                     console.log(err);
                     if(errorCallback) errorCallback(err);
                 }else{
-                    object.data = data;
-                    if(Protolus.verbose) console.log('['+AsciiArt.ansiCodes('DATA'+(this.debug?' RETURN':''), 'magenta')+'] '+request);
-                    callback(data, {});
+                    //object.data = data;
+                    //console.log('['+'DATA'+(this.debug?' RETURN':'')+'] '+request);
+                    callback(data[0], {});
                 }
             }, this));
         }

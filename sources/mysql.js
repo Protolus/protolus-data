@@ -44,6 +44,7 @@ var MySQLDatasource = new Class({
     Extends : Data.Source,
     debug : false,
     initialize: function(options){
+        options.type = 'mysql';
         this.parent(options);
         this.connection = mysql.createClient(options);
     },

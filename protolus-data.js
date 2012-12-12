@@ -23,13 +23,25 @@ prime.clone = function(obj){
     }
     return result;
 };
+array.erase = function(arr, field){
+    var index;
+    while((arr.indexOf(field)) != -1){ //get 'em all
+        arr.splice(index, 1); //delete the one we found
+    }
+};
 
 var Options = new Class({
     setOptions : function(options){
         if(!this.options) this.options = {};
-        array.forEach(options, fn.bind(function(value, key){
+        var value;
+        for(var key in options){
+            value = options[key];
+            if(this.on && key.substring(0,2) == 'on' && key.substring(2,3) == key.substring(2,3).toUpperCase()){
+                var event = key.substring(2,3).toLowerCase()+key.substring(3);
+                this.on(event, value);
+            }
             this.options[key] = value;
-        }, this));
+        }
     }
 });
 
@@ -47,10 +59,11 @@ var ProtolusData = new Class({
         if(!ProtolusData.sources[options.datasource]) new Error('Datasource not found for object!');
         this.options = options;
         this.datasource = ProtolusData.Source.get(options.datasource);
-        if(this.datasource) switch(this.datasource.options.type){
+        if(this.datasource){
+        switch(this.datasource.options.type){
             case 'mongo':
                 if(this.primaryKey == 'id'){ //if we index by id, we'll assume mongo's _id will do just as well 
-                    this.fields.erase('id');
+                    array.erase(this.fields, 'id');
                     this.virtualAlias('id', '_id');
                     /*this.virtualSetter('id', function(value){
                         console.log('id', value);
@@ -64,13 +77,21 @@ var ProtolusData = new Class({
                 
                 break;
         }
+        }
     },
     get : function(key, typed){
         if(this.virtuals[key] && this.virtuals[key].get){
             return this.virtuals[key].get(key, typed);
-        }else if(this.data[key]){
-            if(typed && this.fieldOptions[key] && this.fieldOptions[key]['type']) return this.datasource.getRepresentation(this.fieldOptions[key]['type'], this.data[key]);
-            else return this.data[key];
+        }else{
+            if(this.data[key]){
+                if(typed && this.fieldOptions[key] && this.fieldOptions[key]['type']){
+                    return this.datasource.getRepresentation(this.fieldOptions[key]['type'], this.data[key]);
+                }else{
+                    return this.data[key];
+                }
+            }else{
+                
+            }
         }
     },
     getByType : function(key, value){
@@ -122,6 +143,7 @@ var ProtolusData = new Class({
         this.set(this.primaryKey, id);
         return this.datasource.load(this, fn.bind(function(data){
             this.exists = true;
+            //this.data = data;
             if(callback) callback(data);
         }, this), errorCallback);
     },
