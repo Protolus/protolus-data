@@ -3,7 +3,7 @@
     "homepage": "https://github.com/Protolus/protolus-data",
     "version": "0.0.1-alpha",
     "main": "./node_modules/protolus-data.js",
-    "description": "A multi source ORM supporting normalized queries across them",
+    "description": "A multi source ORM supporting normalized queries across many instances of datasources",
     "keywords": [
         "ORM",
         "data",

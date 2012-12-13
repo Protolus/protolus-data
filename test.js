@@ -96,7 +96,7 @@ describe('Protolus.Data', function(){
             });
         });
         
-        it('select a set of objects >= to the one we created', function(done){
+        it('select a set of objects == to the one we created', function(done){
             Data.query('Thing', 'id = '+id, function(results){
                 results.length.should.equal(1);
                 done();
