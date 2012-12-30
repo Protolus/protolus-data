@@ -1,56 +1,17 @@
-//todo: events support
-var prime = require('prime');
+var ext = require('prime-ext');
+var prime = ext(require('prime'));
 var Class = require('Classy');
 var type = require('prime/util/type');
-var array = require('prime/es5/array');
+var string = ext(require('prime/es5/string'));
+var array = ext(require('prime/es5/array'));
 var fn = require('prime/es5/function');
 var regexp = require('prime/es5/regexp');
 var Emitter = require('prime/util/emitter');
 var fs = require('fs');
-prime.clone = function(obj){
-    var result;
-    switch(type(obj)){
-        case 'object':
-            result = {};
-            for(var key in obj){
-                result[key] = prime.clone(obj[key]);
-            }
-            break;
-        case 'array':
-            result = obj.slice(0);
-            break;
-        default : result = obj;
-    }
-    return result;
-};
-
-prime.keys = function(object){
-    var result = [];
-    for(var key in object) result.push(key);
-    return result;
-};
-
-array.erase = function(arr, field){
-    var index;
-    while((arr.indexOf(field)) != -1){ //get 'em all
-        arr.splice(index, 1); //delete the one we found
-    }
-};
-
-var Options = new Class({
-    setOptions : function(options){
-        if(!this.options) this.options = {};
-        var value;
-        for(var key in options){
-            value = options[key];
-            if(this.on && key.substring(0,2) == 'on' && key.substring(2,3) == key.substring(2,3).toUpperCase()){
-                var event = key.substring(2,3).toLowerCase()+key.substring(3);
-                this.on(event, value);
-            }
-            this.options[key] = value;
-        }
-    }
-});
+var Options = require('prime-ext/options');
+var Registry = require('prime-ext/registry');
+var Filters = require('prime-ext/filters');
+var InternalWorker = require('prime-ext/internal-worker');
 
 var ProtolusData = new Class({
     data : {},
@@ -260,36 +221,13 @@ ProtolusData.id = function(type){
         
     }
 };
-ProtolusData.BitMask = new Class({
-    value : null,
-    initialize : function(value, base){
-        if(!base) base = 10;
-        if(value) this.value = parseInt(value, base);
-    },
-    setBit : function(position, value){
-        if(this.getBit(position)){ //it's set
-            if(!value){//clear
-                this.value = (1 << position) ^ this.value;
-            }// else it's already set!
-        }else{ //not set
-            if(value){
-                this.value = (1 << position) | this.value;
-            }// it's already not set!
-        }
-    },
-    getBit : function(position){
-        return !!((1 << position) & this.value);
-    },
-    bits : function(){
-        return this.value.toString(2);
-    }
-});
+ProtolusData.BitMask = require('bit-mask');
 ProtolusData.Owner = new Class({ //an owner is an instance of Data
     groups : [],
     id : false,
     can : function(action, object){
         if(object.permissions){ //todo: these should cascade
-            var mask = new Data.OwnershipMask(object.permissions.mask);
+            var mask = new ProtolusData.OwnershipMask(object.permissions.mask);
             if(this.id == object.permissions.owner){ //user
                 return mask.hasPermission('user', action);
             }else if(this.groups.contains(object.permissions.group)){
@@ -308,74 +246,7 @@ ProtolusData.Owner = new Class({ //an owner is an instance of Data
         }
     }
 });
-ProtolusData.OwnershipMask = new Class({
-    Extends : ProtolusData.BitMask,
-    contexts : ['user', 'group', 'world'],
-    permissions : ['read', 'write', 'execute'],
-    initialize : function(value){
-        this.parent(value, 8);
-    },
-    getPosition: function(context, permission){
-        var groupIndex = this.contexts.indexOf(context.toLowerCase());
-        if(groupIndex === -1) throw('Unrecognized context('+context+')!');
-        var permissionIndex = this.permissions.indexOf(permission.toLowerCase());
-        if(permissionIndex === -1) throw('Unrecognized permission('+permission+')!');
-        return groupIndex*this.permissions.length + permissionIndex;
-    },
-    hasPermission: function(context, permission){
-        var position = this.getPosition(context, permission);
-        return this.getBit(position);
-    },
-    setPermission: function(context, permission, value){
-        var position = this.getPosition(context, permission);
-        return this.setBit(position, value);
-    },
-    modify: function(clause){
-        var operator = false;
-        var subjects = [];
-        var ch;
-        if(typeOf(clause) == 'number') this.value = clause;
-        for(var lcv=0; lcv < clause.length; lcv++){
-            ch = clause.charAt(lcv);
-            if(operator){
-                var perm;
-                switch(ch){
-                    case 'r':
-                        perm = 'read';
-                        break;
-                    case 'w':
-                        perm = 'write';
-                        break;
-                    case 'x':
-                        perm = 'execute';
-                        break;
-                }
-                array.forEach(subjects, fn.bind(function(subject){
-                    var value;
-                    if(operator == '+') value = 1;
-                    if(operator == '-') value = 0;
-                    this.setPermission(subject, perm, value);
-                }, this));
-            }else{
-                switch(ch){
-                    case 'u':
-                        subjects.push('user');
-                        break;
-                    case 'g':
-                        subjects.push('group');
-                        break;
-                    case 'o':
-                        subjects.push('world');
-                        break;
-                    case '+':
-                    case '-':
-                        operator = ch;
-                        break;
-                }
-            }
-        }
-    }
-});
+ProtolusData.OwnershipMask = ProtolusData.BitMask.OwnershipMask;
 ProtolusData.new = function(type){
     try{
         eval('this.lastProtolusObject = new GLOBAL.'+type+'();');
@@ -387,156 +258,7 @@ ProtolusData.new = function(type){
         throw('Object creation('+type+') error!');
     }
 }
-ProtolusData.WhereParser = new Class({
-    blockOpen : '(',
-    blockClose : ')',
-    escapeOpen : '\'',
-    escapeClose : '\'',
-    sentinels : ['and', 'or', '&&', '||'],
-    operators : ['=', '<', '>', '!'],
-    textEscape : ['\''],
-    parse : function(query){
-        return this.parse_where(query);
-    },
-    parse_where : function(clause){
-        var blocks = this.parse_blocks(clause);
-        var phrases = this.parse_compound_phrases(blocks, []);
-        var object = this;
-        var mapFunction = function(value){
-            if(type(value) == 'array'){
-                return value.map(mapFunction);
-            }else{
-                if(array.contains(object.sentinels, value.toLowerCase())){
-                    return {
-                        type : 'conjunction',
-                        value : value
-                    }
-                }else{
-                    return object.parse_discriminant(value);
-                }
-            }
-        };
-        var parsed = phrases.map(mapFunction);
-        return parsed;
-    },
-    parse_discriminant : function(text){
-        var key = '';
-        var operator = '';
-        var value = '';
-        var inQuote = false;
-        var openQuote = '';
-        var ch;
-        for(var lcv=0; lcv < text.length; lcv++){
-            ch = text[lcv];
-            if(inQuote && ch === inQuote){
-                inQuote = false;
-                continue;
-            }
-            if( (!inQuote) && array.contains(this.textEscape, ch)){
-                inQuote = ch;
-                continue;
-            }
-            if(array.contains(this.operators, ch)){
-                operator += ch;
-                continue;
-            }
-            if(operator !== '') value += ch;
-            else key += ch;
-        }
-        return {
-            type : 'expression',
-            key : key,
-            operator : operator,
-            value : value
-        };
-    },
-    parse_blocks : function(parseableText){
-        var ch;
-        var env = [];
-        var stack = [];
-        var textMode = false;
-        var text = '';
-        var root = env;
-        for(var lcv=0; lcv < parseableText.length; lcv++){
-            ch = parseableText[lcv];
-            if(textMode){
-                text += ch;
-                if(ch === this.escapeClose) textMode = false;
-                continue;
-            }
-            if(ch === this.escapeOpen){
-                text += ch;
-                textMode = true;
-                continue;
-            }
-            if(ch === this.blockOpen){
-                if(text.trim() !== '') env.push(text);
-                var newEnvironment = [];
-                env.push(newEnvironment);
-                stack.push(this.env);
-                env = newEnvironment;
-                text = '';
-                continue;
-            }
-            if(ch === this.blockClose){
-                if(text.trim() !== '') env.push(text);
-                delete env;
-                env = stack.pop();
-                text = '';
-                continue;
-            }
-            text += ch;
-        }
-        if(text.trim() !== '') env.push(text);
-        return root;
-    },
-    parse_compound_phrases : function(data, result){
-        array.forEach(data, fn.bind(function(item){
-            var theType = type(item);
-            if(theType == 'array'){
-                var results = this.parse_compound_phrases(item, []);
-                result.push(results);
-            }else if(theType == 'string'){
-                result = this.parse_compound_phrase(item);
-            }
-        }, this));
-        return result;
-    },
-    parse_compound_phrase : function(clause){
-        var inText = false;
-        var escape = '';
-        var current = '';
-        var results = [''];
-        var ch;
-        for(var lcv=0; lcv < clause.length; lcv++){
-            ch = clause[lcv];
-            if(inText){
-                results[results.length-1] += current+ch;
-                current = '';
-                if(ch === escape) inText = false;
-            }else{
-                if(array.contains(this.textEscape, ch)){
-                    inText = true;
-                    escape = ch;
-                }
-                if(ch != ' '){
-                    current += ch;
-                    if(array.contains(this.sentinels, current.toLowerCase())){
-                        results.push(current);
-                        results.push('');
-                        current = '';
-                    }
-                }else{
-                    results[results.length-1] += current;
-                    current = '';
-                }
-            }
-        }
-        if(current != '') results[results.length-1] += current;
-        if(results[results.length-1] === '') results.pop();
-        return results;
-    }
-});
+ProtolusData.WhereParser = require('where-parser');
 ProtolusData.Source = new Class({
     Implements : Options,
     initialize : function(options){

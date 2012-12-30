@@ -1,7 +1,7 @@
 {
     "name": "protolus-data",
     "homepage": "https://github.com/Protolus/protolus-data",
-    "version": "0.0.1-alpha",
+    "version": "0.0.2-alpha",
     "main": "./node_modules/protolus-data.js",
     "description": "A multi source ORM supporting normalized queries across many instances of datasources",
     "keywords": [
@@ -23,7 +23,10 @@
     },
     "dependencies": {
         "prime": "*",
-        "Classy":"*"
+        "Classy":"*",
+        "prime-ext":"*",
+        "bit-mask":"*",
+        "where-parser":"*"
     },
     "devDependencies": {
         "mocha": "*",

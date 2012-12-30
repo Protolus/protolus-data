@@ -5,6 +5,7 @@ A Node.js data layer supporting a variety of data sources using a single SQL bas
 
 Usage
 -----
+while the features are relatively stable, there will likely be a revision to the way a class is defined.
 
 Datasources are registered by creating an entry in the configuration
 
