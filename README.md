@@ -1,61 +1,88 @@
 protolus-data.js
 ===========
 
-A Node.js data layer supporting a variety of data sources using a single SQL based query syntax
+A Node.js data layer supporting mysql/mongo/rabbit using a single SQL based query syntax
 
 Usage
 -----
-while the features are relatively stable, there will likely be a revision to the way a class is defined.
 
-Datasources are registered by creating an entry in the configuration
+First you'll need to register at least one datasource:
 
-Let's say you want to create a class to represent alien invaders (in this case Red 'Lectroids) containing a few fields('ganglia_state', 'institutionalized', 'ship_completeness', 'origin_dimension'), you'd name your file based on your classname in the 'Classes' directory, such as 'RedLectroid.js'.
+    var MySQLDatasource = require('protolus-data/sources/mysql');
+    new MySQLDatasource({
+        name : 'maindatabase',
+        host : 'localhost',
+        user : 'dbuser',
+        password : 'P455W0RD',
+        database : 'mysqldbname'
+    });
+    
 
-an example looks like:
+The basic data pattern looks like:
 
-    new Class({
-        Extends : Data,
-        initialize : function(options){
-            //if options comes in as a string, we assume it's the key we're selecting (AKA 'id')
-            if(typeOf(options) == 'string') options = {key:options};
-            if(!options) options = {};
-            //link this to a particular datasource (defined in your configuration)
-            options.datasource = 'myAwesomeDatasource';
-            //this is the storage location for this object (think table or collection name)
-            options.name = 'red_lectroid';
+    var Class = require('Classy');
+    var MyObject = new Class({
+        Extends : require('protolus-data'),
+        initialize : function MyObject(key){
             this.fields = [
-                'ganglia_state',
-                'institutionalized',
-                'ship_completeness',
-                'origin_dimension'
+                'id',
+                'somefield',
+                'anotherfield'
             ];
-            this.primaryKey = 'id';
-            this.parent(options);
-            if(options.key) this.load(options.key);
+            this.parent({
+                name : 'user',
+                datasource : 'maindatabase'
+            });
+            if(key) this.load(key);
         }
     });
+    Data.register('MyObject', MyObject);
+    module.exports = MyObject;
     
 You would use this class like this:
 
-    var DrEmilioLizardo = new RedLectroid();
-    DrEmilioLizardo.set('ganglia_state', 'twitching');
-    DrEmilioLizardo.set('institutionalized', true);
-    DrEmilioLizardo.set('ship_completeness', 0.90);
-    DrEmilioLizardo.set('origin_dimension', 8);
-    DrEmilioLizardo.save();
+    var MyObject = Data.require('MyObject');
+    var myInstance = new MyObject();
+    myInstance.set('somefield', 'somevalue');
+    myInstance.set('anotherfield', 49);
+    myInstance.save();
     
 And you would search for a set using:
 
-    Data.search('RedLectroid', "institutionalized == true");
+    Data.search('MyObject', "somefield == 'searchvalue' || (somefield > 24 && somefield < 38)");
     
 or if you only wanted the data payload (not a set of objects)
 
-    Data.query('RedLectroid', "institutionalized == true");
+    Data.query('MyObject', "somefield == 'searchvalue' || (somefield > 24 && somefield < 38)");
     
-One thing to note: This data layer is designed to discourage both streaming data sets and joins. If you need these features or you find this level of indirection uncomfortable you should probably manipulate the DB directly and skip the whole data layer (or even better, interface with an API). 
+One thing to note: This data layer is designed to discourage both streaming data sets and joins while normalizing query syntax across datasources. If you need these features or you find this level of indirection uncomfortable you should probably manipulate the DB directly and skip the whole data layer (or even better, interface with an API). 
+
+Virtuals
+--------
+Sometimes you want to address a field as another field (we use this feature with mongo so you can address the primary key as 'id' rather than '_id'), but you want that reference to be symbolic as far as the DB is concerned. This is simply accomplished:
+
+    object.virtualAlias(virtualName, fieldName);
+    
+Direct Access
+-------------
 
 Other Datasource specific features (for example MapReduce under mongo) must be accessed from the DB driver which may be accessed directly:
 
-    Datasource.get('myAwesomeDatasource').connection;
+    var Data = require('protolus-data');
+    Data.Source.get('myAwesomeDatasource').connection;
 
 But when you do this you are circumventing the data layer (other than letting protolus negotiate the connection for you).
+
+Testing
+-------
+Tests use mocha/should to execute the tests from root
+
+    mocha
+
+If you find any rough edges, please submit a bug!
+
+Right now this only supports credit cards, but this could easily expand to gift cards, EBT, checks, etc. If you have a specific interest, contact me.
+
+Enjoy,
+
+-Abbey Hawk Sparrow
