@@ -20,9 +20,8 @@ First you'll need to register at least one datasource:
 
 The basic data pattern looks like:
 
-    var Class = require('Classy');
-    var MyObject = new Class({
-        Extends : require('protolus-data'),
+    var Data = require('protolus-data');
+    var MyObject = Data.Container({
         initialize : function MyObject(key){
             this.fields = [
                 'id',

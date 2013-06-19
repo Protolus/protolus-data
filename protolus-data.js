@@ -164,7 +164,7 @@ ProtolusData.register = function(type, classDefinition){
     ProtolusData.classes[type] = classDefinition;
 };
 ProtolusData.require = function(type, makeGlobal){
-    var classDefinition = require(type);
+    var classDefinition = (ProtolusData.internalRequire || require)(type);
     ProtolusData.dummies[type] = new classDefinition();
     ProtolusData.register(type, classDefinition);
     if(makeGlobal) GLOBAL[type] = classDefinition;
@@ -204,10 +204,12 @@ ProtolusData.query = function(objType, querystring, options, errorCallback){ //q
     if(type(options) == 'function') options = {onSuccess: options};
     if(!options) options = {};
     if(errorCallback && type(errorCallback) == 'function') options['onFailure'] = errorCallback;
+    if(!errorCallback) errorCallback = function(ob){ throw(ob); };
     var dummy = ProtolusData.dummy(objType);
     var datasource = ProtolusData.Source.get(dummy.options.datasource);
     var query = ProtolusData.parse(querystring);
     queryTyper(query, dummy, datasource);
+    if(!datasource) return errorCallback('There is no datasource by the name \''+dummy.options.datasource+'\'');
     return datasource.query(objType, query, options);
 };
 
@@ -257,6 +259,9 @@ ProtolusData.new = function(type){
         console.log(ex);
         throw('Object creation('+type+') error!');
     }
+}
+ProtolusData.loadSource = function(id){
+    ProtolusData.Source[id] = require('./sources/'+id.toLowerCase());
 }
 ProtolusData.WhereParser = require('where-parser');
 ProtolusData.Source = new Class({
@@ -330,7 +335,15 @@ ProtolusData.Stream = new Class({
         return value;
     }
 });
+ProtolusData.Container = function(object){
+    object.Extends = ProtolusData;
+    var container = new Class(object);
+    return container;
+};
 ProtolusData.Stream.get = function(name){
     return ProtolusData.streams[name];
 };
+//ProtolusData.internalRequire = function(topLevelRequire){
+//    ProtolusData.TLRQ = topLevelRequire;
+//};
 module.exports = ProtolusData;
